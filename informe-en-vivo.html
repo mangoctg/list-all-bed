@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Informe de habitaciones — En vivo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
+<style>
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:#F5F3EF;
+    color:#1B2430;
+    font-family:'Inter', sans-serif;
+    padding:20px;
+  }
+  #wrap{ max-width:1040px; margin:0 auto; }
+
+  .topbar{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-bottom:14px;
+  }
+  .estado-conexion{
+    font-size:0.78rem;
+    font-weight:600;
+    padding:5px 12px;
+    border-radius:20px;
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+  }
+  .estado-conexion .dot{ width:8px; height:8px; border-radius:50%; }
+  .estado-conexion.ok{ background:#E4F0E8; color:#2E6B47; }
+  .estado-conexion.ok .dot{ background:#4E9B6E; }
+  .estado-conexion.mal{ background:#F5E4E4; color:#8A3A3A; }
+  .estado-conexion.mal .dot{ background:#C9585A; }
+  .actualizado{ font-size:0.75rem; color:#8A8478; font-family:'IBM Plex Mono', monospace; }
+
+  #report{
+    background:#FFFFFF;
+    border-radius:12px;
+    padding:24px 28px;
+    box-shadow:0 2px 10px rgba(0,0,0,0.06);
+  }
+  .r-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    border-bottom:3px solid #1B2430;
+    padding-bottom:8px;
+    margin-bottom:10px;
+  }
+  .r-title{ font-family:'Space Grotesk', sans-serif; font-size:20px; font-weight:700; margin:0; }
+  .r-date{ font-family:'IBM Plex Mono', monospace; font-size:11px; color:#5A6474; }
+  .r-legend{
+    display:flex; flex-wrap:wrap; gap:10px; margin-bottom:12px;
+    background:#F5F3EF; border:1px solid #D8D3C8; border-radius:8px; padding:7px 10px;
+  }
+  .r-legend-item{ display:flex; align-items:center; gap:5px; font-size:10.5px; font-weight:700; }
+  .r-legend-dot{ width:13px; height:13px; border-radius:3px; display:inline-block; border:1px solid rgba(0,0,0,0.15); }
+  .r-summary{ display:grid; grid-template-columns:repeat(6,1fr); gap:6px; margin-bottom:14px; }
+  .r-sum-box{ border-radius:8px; padding:8px 4px; text-align:center; border:2px solid #1B2430; }
+  .r-sum-box .n{ font-family:'Space Grotesk',sans-serif; font-size:18px; font-weight:700; line-height:1; }
+  .r-sum-box .l{ font-size:8.5px; text-transform:uppercase; letter-spacing:0.02em; font-weight:600; }
+  .r-section-title{ font-family:'Space Grotesk', sans-serif; font-size:13px; font-weight:700; margin:16px 0 6px; padding-bottom:3px; border-bottom:1px solid #C9C3B8; }
+  .r-cols{ display:grid; grid-template-columns:1.55fr 0.85fr; gap:16px; }
+  table.r-table{ width:100%; border-collapse:collapse; font-size:10.5px; }
+  table.r-table th{ background:#1B2430; color:#fff; font-size:9px; text-transform:uppercase; letter-spacing:0.02em; padding:4px 5px; text-align:left; }
+  table.r-table td{ border-bottom:1px solid #E4E0D6; padding:3px 5px; vertical-align:middle; }
+  td.r-habcol{ font-family:'IBM Plex Mono', monospace; font-weight:700; font-size:11px; white-space:nowrap; }
+  td.r-numcol{ text-align:center; font-weight:700; font-size:12px; font-family:'Space Grotesk', sans-serif; }
+  .r-bedrow{ display:flex; flex-wrap:wrap; gap:3px; }
+  .r-bedcell{ width:17px; height:17px; border-radius:3px; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono', monospace; font-size:8.5px; font-weight:700; color:#fff; flex-shrink:0; }
+  .r-anexo-list{ display:flex; flex-direction:column; gap:3px; }
+  .r-anexo-item{ display:flex; align-items:center; justify-content:space-between; font-size:10.5px; padding:4px 8px; border-radius:6px; background:#F5F3EF; border:1px solid #E4E0D6; }
+  .r-anexo-num{ font-family:'IBM Plex Mono', monospace; font-weight:700; }
+  .r-anexo-badge{ font-size:9px; font-weight:700; padding:2px 7px; border-radius:20px; color:#fff; }
+  .r-empty{ text-align:center; padding:60px 20px; color:#8A8478; font-size:0.95rem; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div class="topbar">
+    <span class="estado-conexion mal" id="estado-conexion"><span class="dot"></span> Conectando...</span>
+    <span class="actualizado" id="actualizado"></span>
+  </div>
+  <div id="report">
+    <div class="r-empty">Esperando datos del programa de recepción…</div>
+  </div>
+</div>
+
+<script>
+// ==== Debe ser exactamente el mismo proyecto/base que usa el programa de recepción ====
+const firebaseConfig = {
+  apiKey: "AIzaSyAgoN2q3SgldzhGwp0fG2d27AagwyzENrw",
+  databaseURL: "https://liar-al-bed-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "liar-al-bed"
+};
+
+const estadoLabels = { vacia:'Vacía', ocupada:'Ocupada', sale:'Sale hoy', entra:'Entra hoy', extendio:'Extendió', limpieza:'Solicita limpieza' };
+const estadoOrder = ['vacia','ocupada','sale','entra','extendio','limpieza'];
+const ESTADO_PRIVADA_LABELS = { sigue:'Sigue', sale:'Sale hoy', vacia:'Vacía' };
+const colorHex = {
+  vacia:'#8A94A3', ocupada:'#4F8FB8', sale:'#C98A3F',
+  entra:'#4E9B6E', extendio:'#9B7FC7', limpieza:'#C9585A'
+};
+
+function fechaHoyTexto(){
+  const d = new Date();
+  const opciones = { weekday:'long', day:'numeric', month:'long', year:'numeric' };
+  let texto = d.toLocaleDateString('es-CO', opciones);
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
+function migrarPrivada(p){
+  if(p.estadoActual !== undefined) return p;
+  const mapaEstado = { ocupada:'sigue', extendio:'sigue', sale:'sale', vacia:'vacia', limpieza:'vacia', entra:'vacia' };
+  const estadoActual = mapaEstado[p.estado] || 'vacia';
+  const entraHoy = p.estado === 'entra';
+  return { id:p.id, numero:p.numero, estadoActual, entraHoy, tipoEntrada: entraHoy ? 'Individual' : null, notas: p.notas || '' };
+}
+
+function contarTodo(data){
+  const counts = { vacia:0, ocupada:0, sale:0, entra:0, extendio:0, limpieza:0 };
+  data.dorms.forEach(r => r.camas.forEach(c => counts[c.estado]++));
+  data.privadas.forEach(p => {
+    const bucket = p.estadoActual === 'sigue' ? 'ocupada' : p.estadoActual;
+    counts[bucket]++;
+    if(p.entraHoy) counts.entra++;
+  });
+  return counts;
+}
+
+function colorPrivada(estadoActual){
+  return estadoActual === 'sigue' ? colorHex.ocupada : colorHex[estadoActual];
+}
+
+function pintarInforme(data){
+  const counts = contarTodo(data);
+  const legend = estadoOrder.map(k=>`
+    <div class="r-legend-item"><span class="r-legend-dot" style="background:${colorHex[k]}"></span>${estadoLabels[k]}</div>
+  `).join('');
+  const summary = estadoOrder.map(k=>`
+    <div class="r-sum-box" style="border-color:${colorHex[k]}"><div class="n" style="color:${colorHex[k]}">${counts[k]}</div><div class="l">${estadoLabels[k]}</div></div>
+  `).join('');
+
+  const dormRows = data.dorms.map(room=>{
+    const libres = room.camas.filter(c=>c.estado==='vacia').length;
+    const porHacer = room.camas.filter(c=>c.estado==='sale' || c.estado==='limpieza').length;
+    const bedCells = room.camas.map(c=>`<div class="r-bedcell" style="background:${colorHex[c.estado]}">${c.letra}</div>`).join('');
+    return `<tr><td class="r-habcol">${room.numero}</td><td><div class="r-bedrow">${bedCells}</div></td><td class="r-numcol">${libres}</td><td class="r-numcol">${porHacer}</td></tr>`;
+  }).join('');
+
+  const anexoItems = data.privadas.map(p=>{
+    const detalle = p.entraHoy ? `Entra: ${p.tipoEntrada || ''}` : (p.estadoActual !== 'sigue' ? 'No entra' : '');
+    return `<div class="r-anexo-item"><span><span class="r-anexo-num">${p.numero}</span>${detalle ? ' — ' + detalle : ''}</span><span class="r-anexo-badge" style="background:${colorPrivada(p.estadoActual)}">${ESTADO_PRIVADA_LABELS[p.estadoActual]}</span></div>`;
+  }).join('');
+
+  document.getElementById('report').innerHTML = `
+    <div class="r-header">
+      <p class="r-title">Informe de habitaciones · Hostel</p>
+      <div class="r-date">${fechaHoyTexto()}</div>
+    </div>
+    <div class="r-legend">${legend}</div>
+    <div class="r-summary">${summary}</div>
+    <div class="r-cols">
+      <div>
+        <div class="r-section-title">Dormitorios</div>
+        <table class="r-table">
+          <thead><tr><th>Hab</th><th>Camas / Hab.</th><th>Libres</th><th>Por hacer</th></tr></thead>
+          <tbody>${dormRows}</tbody>
+        </table>
+      </div>
+      <div>
+        <div class="r-section-title">Anexo — Privadas</div>
+        <div class="r-anexo-list">${anexoItems}</div>
+      </div>
+    </div>
+  `;
+}
+
+function marcarConexion(ok, texto){
+  const el = document.getElementById('estado-conexion');
+  el.className = 'estado-conexion ' + (ok ? 'ok' : 'mal');
+  el.innerHTML = `<span class="dot"></span> ${texto}`;
+}
+
+function marcarActualizado(){
+  const ahora = new Date();
+  document.getElementById('actualizado').textContent =
+    'Última actualización: ' + ahora.toLocaleTimeString('es-CO');
+}
+
+try{
+  firebase.initializeApp(firebaseConfig);
+  const ref = firebase.database().ref('hostel_habitaciones');
+  ref.on('value', (snap)=>{
+    const val = snap.val();
+    if(val && val.json){
+      const data = JSON.parse(val.json);
+      data.privadas = data.privadas.map(migrarPrivada);
+      pintarInforme(data);
+      marcarConexion(true, 'En vivo');
+      marcarActualizado();
+    }
+  }, (err)=>{
+    console.error(err);
+    marcarConexion(false, 'Sin conexión');
+  });
+}catch(e){
+  console.error(e);
+  marcarConexion(false, 'Error de configuración');
+}
+</script>
+</body>
+</html>
